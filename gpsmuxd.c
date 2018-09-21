@@ -95,6 +95,7 @@ int main(int argc, char *argv[])
     // register sigint
     signal(SIGINT , sig_handler);
     signal(SIGKILL, sig_handler);
+    signal(SIGPIPE, sig_handler);
 
     while (!g_exit) {
         struct timeval tv;
