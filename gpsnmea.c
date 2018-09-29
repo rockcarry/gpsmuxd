@@ -26,12 +26,26 @@ typedef struct {
 
 static void do_nmea_parse(CONTEXT *ctxt, char *sentence)
 {
-    int need_callback = 1;
+    char *tokens[10] = { sentence };
+    int   need_callback = 1;
+    int   i, j;
+
     printf("%s", sentence);
-    if        (memcmp(sentence, "GPRMC", 5) == 0) {
-    } else if (memcmp(sentence, "GPGGA", 5) == 0) {
-    } else if (memcmp(sentence, "GPGSA", 5) == 0) {
-    } else if (memcmp(sentence, "GPGSV", 5) == 0) {
+    //++ split sentence to tokens
+    for (i=0,j=1; sentence[i]&&j<10; i++) {
+        if (sentence[i] == ',') {
+            sentence[i] = '\0';
+            tokens[j++] = sentence + i + 1;
+        }
+    }
+    //-- split sentence to tokens
+
+    if (memcmp(sentence, "$GPRMC", 6) == 0) {
+        printf("==ck== %s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+            tokens[0], tokens[1], tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7], tokens[8], tokens[9]);
+    } else if (memcmp(sentence, "$GPGGA", 6) == 0) {
+    } else if (memcmp(sentence, "$GPGSA", 6) == 0) {
+    } else if (memcmp(sentence, "$GPGSV", 6) == 0) {
     } else {
 //      printf("unparsed sentence !\n");
         need_callback = 0;
