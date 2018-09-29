@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include <termios.h>
 #include <fcntl.h>
-#include "nmea.h"
+#include "gpsnmea.h"
 
 typedef struct {
     char       dev[PATH_MAX];
@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
 
     if (argc < 2) {
         printf("\n");
-        printf("usage: nmea dev\n");
+        printf("usage: gpsnmea dev\n");
         printf("  dev - the serial dev name, example /dev/ttyS1.\n");
     }
 
