@@ -191,7 +191,7 @@ static void* read_thread_proc(void *param)
         int    ret;
 
         if (fd == -1) {
-//          fd = open(ctxt->dev, O_WRONLY);
+//          fd = open(ctxt->dev, O_RDONLY);
             fd = open_serial_port(ctxt->dev);
         }
         if (fd <= 0) {
