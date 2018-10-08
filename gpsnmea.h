@@ -28,14 +28,20 @@ typedef struct {
     float     vdop  ;
     int8_t    inuse ;
     int8_t    inview;
-    GPS_SATELLITE satellites[32];
+    GPS_SATELLITE satellites[16];
 } GPS_STATUS;
 
-typedef void (*PFN_NMEA_CALLBACK)(void *params, GPS_STATUS *pgs);
+enum {
+    GS_TYPE_GPS,
+    GS_TYPE_BEIDOU,
+    GS_TYPE_GLONASS,
+};
+
+typedef void (*PFN_NMEA_CALLBACK)(void *params, int type, GPS_STATUS *pgs);
 
 void* nmea_init(char *dev, PFN_NMEA_CALLBACK cb, void *params);
 void  nmea_exit(void *ctx);
-void* nmea_gps_status(void *ctx);
+void* nmea_gps_status(void *ctx, int type);
 void  nmea_print(GPS_STATUS *pgs);
 
 #endif

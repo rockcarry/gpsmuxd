@@ -10,6 +10,8 @@
 typedef struct {
     char       dev[PATH_MAX];
     GPS_STATUS gps_status;
+    GPS_STATUS bds_status;
+    GPS_STATUS gns_status;
 
     #define TS_EXIT   (1 << 0)
     uint32_t          thread_status;
@@ -23,8 +25,17 @@ typedef struct {
     int               nmeatail;
     int               nmeanum ;
 
-    int               gpssatidx;
-    GPS_SATELLITE     gpssatlist[16];
+    int8_t            gps_satidx;
+    GPS_SATELLITE     gps_satlist[16];
+    int8_t            gps_inuse[12];
+
+    int8_t            bds_satidx;
+    GPS_SATELLITE     bds_satlist[16];
+    int8_t            bds_inuse[12];
+
+    int8_t            gns_satidx;
+    GPS_SATELLITE     gns_satlist[16];
+    int8_t            gns_inuse[12];
 } CONTEXT;
 
 static int str2int(char *str, int len)
@@ -47,8 +58,11 @@ static void do_nmea_parse(CONTEXT *ctxt, char *sentence)
 {
     #define MAX_TOKEN_NUM  22
     char *tokens[MAX_TOKEN_NUM] = { sentence };
-    int   gpsinuse[12];
-    int   i, j;
+    GPS_STATUS    *status   = NULL;
+    GPS_SATELLITE *satelist = NULL;
+    int           *satidx   = NULL;
+    int           *inuse    = NULL;
+    int type, i, j;
 
 //  printf("%s", sentence);
     //++ split sentence to tokens
@@ -61,57 +75,80 @@ static void do_nmea_parse(CONTEXT *ctxt, char *sentence)
     for (; j<MAX_TOKEN_NUM; j++) tokens[j] = "";
     //-- split sentence to tokens
 
-    if (memcmp(sentence, "$GPRMC", 6) == 0) {
-        ctxt->gps_status.latitude  = (tokens[4][0] == 'S' ? -1 : 1) * dm2ddd(strtod(tokens[3], NULL));
-        ctxt->gps_status.longitude = (tokens[6][0] == 'W' ? -1 : 1) * dm2ddd(strtod(tokens[5], NULL));
-        ctxt->gps_status.speed     = (float)(strtod(tokens[7], NULL) * 1.852 / 3.6);
-        ctxt->gps_status.course    = (float)(strtod(tokens[8], NULL));
-        ctxt->gps_status.datetime.tm_year = str2int(tokens[9] + 4, 2) + 2000 - 1900;
-        ctxt->gps_status.datetime.tm_mon  = str2int(tokens[9] + 2, 2) - 1;
-        ctxt->gps_status.datetime.tm_mday = str2int(tokens[9] + 0, 2);
-        ctxt->gps_status.datetime.tm_hour = str2int(tokens[1] + 0, 2);
-        ctxt->gps_status.datetime.tm_min  = str2int(tokens[1] + 2, 2);
-        ctxt->gps_status.datetime.tm_sec  = str2int(tokens[1] + 4, 2);
+    if (memcmp(tokens[0], "$GP", 3) == 0) {
+        type     = GS_TYPE_GPS;
+        status   =&ctxt->gps_status;
+        satelist = ctxt->gps_satlist;
+        satidx   =&ctxt->gps_satidx;
+        inuse    = ctxt->gps_inuse;
+    } else if (memcmp(tokens[0], "$GB", 3) == 0) {
+        type     = GS_TYPE_BEIDOU;
+        status   =&ctxt->bds_status;
+        satelist = ctxt->bds_satlist;
+        satidx   =&ctxt->bds_satidx;
+        inuse    = ctxt->bds_inuse;
+    } else if (memcmp(tokens[0], "$GN", 3) == 0) {
+        type     = GS_TYPE_GLONASS;
+        status   =&ctxt->gns_status;
+        satelist = ctxt->gns_satlist;
+        satidx   =&ctxt->gns_satidx;
+        inuse    = ctxt->gns_inuse;
+    } else return;
+
+    tokens[0] += 3;
+    if (memcmp(tokens[0], "RMC", 3) == 0) {
+        status->latitude  = (tokens[4][0] == 'S' ? -1 : 1) * dm2ddd(strtod(tokens[3], NULL));
+        status->longitude = (tokens[6][0] == 'W' ? -1 : 1) * dm2ddd(strtod(tokens[5], NULL));
+        status->speed     = (float)(strtod(tokens[7], NULL) * 1.852 / 3.6);
+        status->course    = (float)(strtod(tokens[8], NULL));
+        status->datetime.tm_year = str2int(tokens[9] + 4, 2) + 2000 - 1900;
+        status->datetime.tm_mon  = str2int(tokens[9] + 2, 2) - 1;
+        status->datetime.tm_mday = str2int(tokens[9] + 0, 2);
+        status->datetime.tm_hour = str2int(tokens[1] + 0, 2);
+        status->datetime.tm_min  = str2int(tokens[1] + 2, 2);
+        status->datetime.tm_sec  = str2int(tokens[1] + 4, 2);
         if (tokens[2][0] == 'V') {
-            ctxt->gps_status.fixstatus = 0;
-        } else if (ctxt->gps_status.fixstatus == 0) {
-            ctxt->gps_status.fixstatus = GPS_FIXED;
+            status->fixstatus = 0;
+        } else if (status->fixstatus == 0) {
+            status->fixstatus = GPS_FIXED;
         }
-        memcpy(ctxt->gps_status.satellites, ctxt->gpssatlist, sizeof(GPS_SATELLITE) * 16);
-        ctxt->callback(ctxt->cbparams, &ctxt->gps_status);
-    } else if (memcmp(sentence, "$GPGGA", 6) == 0) {
-        ctxt->gps_status.datetime.tm_hour = str2int(tokens[1] + 0, 2);
-        ctxt->gps_status.datetime.tm_min  = str2int(tokens[1] + 2, 2);
-        ctxt->gps_status.datetime.tm_sec  = str2int(tokens[1] + 4, 2);
-        ctxt->gps_status.latitude  = (tokens[3][0] == 'S' ? -1 : 1) * dm2ddd(strtod(tokens[2], NULL));
-        ctxt->gps_status.longitude = (tokens[5][0] == 'W' ? -1 : 1) * dm2ddd(strtod(tokens[4], NULL));
-        ctxt->gps_status.hdop      = (float)strtod(tokens[8], NULL);
-        ctxt->gps_status.altitude  = (float)strtod(tokens[9], NULL);
-        ctxt->gps_status.inuse     = atoi(tokens[7]);
-    } else if (memcmp(sentence, "$GPGSA", 6) == 0) {
-        ctxt->gps_status.fixstatus = tokens[2][0] > '1' ? tokens[2][0] - '0' : 0;
-        ctxt->gps_status.pdop      = (float)strtod(tokens[15], NULL);
-        ctxt->gps_status.hdop      = (float)strtod(tokens[16], NULL);
-        ctxt->gps_status.vdop      = (float)strtod(tokens[17], NULL);
-        for (i=0; i<12; i++) gpsinuse[i] = atoi(tokens[3+i]);
-    } else if (memcmp(sentence, "$GPGSV", 6) == 0) {
+    } else if (memcmp(tokens[0], "GGA", 3) == 0) {
+        status->datetime.tm_hour = str2int(tokens[1] + 0, 2);
+        status->datetime.tm_min  = str2int(tokens[1] + 2, 2);
+        status->datetime.tm_sec  = str2int(tokens[1] + 4, 2);
+        status->latitude  = (tokens[3][0] == 'S' ? -1 : 1) * dm2ddd(strtod(tokens[2], NULL));
+        status->longitude = (tokens[5][0] == 'W' ? -1 : 1) * dm2ddd(strtod(tokens[4], NULL));
+        status->hdop      = (float)strtod(tokens[8], NULL);
+        status->altitude  = (float)strtod(tokens[9], NULL);
+        status->inuse     = atoi(tokens[7]);
+    } else if (memcmp(tokens[0], "GSA", 3) == 0) {
+        status->fixstatus = tokens[2][0] > '1' ? tokens[2][0] - '0' : 0;
+        status->pdop      = (float)strtod(tokens[15], NULL);
+        status->hdop      = (float)strtod(tokens[16], NULL);
+        status->vdop      = (float)strtod(tokens[17], NULL);
+        for (i=0; i<12; i++) inuse[i] = tokens[3+i][0] ? atoi(tokens[3+i]) : -1;
+    } else if (memcmp(tokens[0], "GSV", 3) == 0) {
         if (atoi(tokens[2]) == 1) {
-            memset(&ctxt->gpssatlist, 0, sizeof(GPS_SATELLITE) * 16);
-            ctxt->gpssatidx = 0;
+            memset(satelist, 0, sizeof(GPS_SATELLITE) * 16);
+            *satidx = 0;
         }
-        ctxt->gps_status.inview = atoi(tokens[3]);
+        status->inview = atoi(tokens[3]);
         for (i=0; i<4; i++) {
-            if (ctxt->gpssatidx >= 16) break;
-            ctxt->gpssatlist[ctxt->gpssatidx].prn       = tokens[i*4+4][0] ? atoi(tokens[i*4+4]) : -1;
-            ctxt->gpssatlist[ctxt->gpssatidx].elevation = tokens[i*4+5][0] ? atoi(tokens[i*4+5]) : -1;
-            ctxt->gpssatlist[ctxt->gpssatidx].azimuth   = tokens[i*4+6][0] ? atoi(tokens[i*4+6]) : -1;
-            ctxt->gpssatlist[ctxt->gpssatidx].snr       = tokens[i*4+7][0] ? atoi(tokens[i*4+7]) :  0;
+            if (*satidx >= 16) break;
+            satelist[*satidx].prn       = tokens[i*4+4][0] ? atoi(tokens[i*4+4]) : -1;
+            satelist[*satidx].elevation = tokens[i*4+5][0] ? atoi(tokens[i*4+5]) : -1;
+            satelist[*satidx].azimuth   = tokens[i*4+6][0] ? atoi(tokens[i*4+6]) : -1;
+            satelist[*satidx].snr       = tokens[i*4+7][0] ? atoi(tokens[i*4+7]) :  0;
             for (j=0; j<12; j++) {
-                if (gpsinuse[j] == ctxt->gpssatlist[ctxt->gpssatidx].prn) {
-                    ctxt->gpssatlist[ctxt->gpssatidx].inuse = 1;
+                if (inuse[j] == satelist[*satidx].prn) {
+                    satelist[*satidx].inuse = 1;
                 }
             }
-            ctxt->gpssatidx++;
+            (*satidx)++;
+        }
+        if (atoi(tokens[1]) == atoi(tokens[2])) {
+            memcpy(status->satellites, satelist, sizeof(GPS_SATELLITE) * 16);
+            ctxt->callback(ctxt->cbparams, type, status);
         }
     }
 }
@@ -245,10 +282,15 @@ void nmea_exit(void *ctx)
     free(ctxt);
 }
 
-void* nmea_gps_status(void *ctx)
+void* nmea_gps_status(void *ctx, int type)
 {
     CONTEXT *ctxt = (CONTEXT*)ctx;
-    return &ctxt->gps_status;
+    switch (type) {
+    case GS_TYPE_GPS    : return &ctxt->gps_status;
+    case GS_TYPE_BEIDOU : return &ctxt->bds_status;
+    case GS_TYPE_GLONASS: return &ctxt->gns_status;
+    }
+    return NULL;
 }
 
 void nmea_print(GPS_STATUS *pgs)
@@ -278,9 +320,9 @@ void nmea_print(GPS_STATUS *pgs)
     for (i=0; i<pgs->inview; i++) {
         printf("%3d %3d %3d %3d %c ",
             pgs->satellites[i].prn,
-            pgs->satellites[i].snr,
             pgs->satellites[i].elevation,
             pgs->satellites[i].azimuth,
+            pgs->satellites[i].snr,
             pgs->satellites[i].inuse ? '*' : ' ');
         for (j=0; j<pgs->satellites[i].snr; j++) {
             printf("|");
@@ -291,9 +333,11 @@ void nmea_print(GPS_STATUS *pgs)
 }
 
 #if TEST
-static void gps_nmea_callback(void *params, GPS_STATUS *pgs)
+static void gps_nmea_callback(void *params, int type, GPS_STATUS *pgs)
 {
-    nmea_print(pgs);
+    if (type == GS_TYPE_GPS) {
+        nmea_print(pgs);
+    }
 }
 
 int main(int argc, char *argv[])
