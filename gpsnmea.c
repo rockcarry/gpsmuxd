@@ -60,8 +60,8 @@ static void do_nmea_parse(CONTEXT *ctxt, char *sentence)
     char *tokens[MAX_TOKEN_NUM] = { sentence };
     GPS_STATUS    *status   = NULL;
     GPS_SATELLITE *satelist = NULL;
-    int           *satidx   = NULL;
-    int           *inuse    = NULL;
+    int8_t        *satidx   = NULL;
+    int8_t        *inuse    = NULL;
     int type, i, j;
 
 //  printf("%s", sentence);
@@ -133,6 +133,7 @@ static void do_nmea_parse(CONTEXT *ctxt, char *sentence)
             *satidx = 0;
         }
         status->inview = atoi(tokens[3]);
+        status->inview = status->inview < 16 ? status->inview : 16;
         for (i=0; i<4; i++) {
             if (*satidx >= 16) break;
             satelist[*satidx].prn       = tokens[i*4+4][0] ? atoi(tokens[i*4+4]) : -1;
